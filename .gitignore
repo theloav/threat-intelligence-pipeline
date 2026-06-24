@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Environment — NEVER commit credentials
+.env
+*.env.local
+
+# Cache and database
+cache/
+*.db
+*.sqlite
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.ruff_cache/
+
+# STIX exports
+exports/
+
+# Logs
+*.log
+logs/
+
+# Docker volumes (local)
+docker/data/
+
+# MISP data
+docker/misp-data/
