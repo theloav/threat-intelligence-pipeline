@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 
@@ -9,6 +8,7 @@ from rich.console import Console
 
 from tip.core.config import Settings
 from tip.core.models import FeedIngestionResult
+from tip.core.timeutil import utcnow
 from tip.feeds.abusech_feed import AbuseCHFeed
 from tip.feeds.base import BaseFeed
 from tip.feeds.otx_feed import OTXFeed
@@ -54,9 +54,11 @@ class FeedScheduler:
             next_run_time=datetime.now(),
         )
         self.scheduler.start()
-        console.print("[green]Scheduler started.[/green] OTX every "
-                      f"{self.settings.otx_schedule_minutes}m, "
-                      f"Abuse.ch every {self.settings.abusech_schedule_minutes}m.")
+        console.print(
+            "[green]Scheduler started.[/green] OTX every "
+            f"{self.settings.otx_schedule_minutes}m, "
+            f"Abuse.ch every {self.settings.abusech_schedule_minutes}m."
+        )
 
     async def run_once(self, feed_name: str = "all") -> list[FeedIngestionResult]:
         """Run feeds once without starting the scheduler."""
@@ -68,7 +70,7 @@ class FeedScheduler:
         return results
 
     async def _run_feed(self, feed: BaseFeed) -> FeedIngestionResult:
-        started = datetime.utcnow()
+        started = utcnow()
         new, dupes, stored, errors = 0, 0, 0, 0
         error_msgs: list[str] = []
 
@@ -79,7 +81,7 @@ class FeedScheduler:
             return FeedIngestionResult(
                 feed_name=feed.name,
                 started_at=started,
-                finished_at=datetime.utcnow(),
+                finished_at=utcnow(),
                 errors=1,
                 error_details=[str(exc)],
             )
@@ -94,7 +96,7 @@ class FeedScheduler:
                     dupes += 1
                     continue
                 new += 1
-                stored_ioc = await self.misp.store_ioc(ioc)
+                await self.misp.store_ioc(ioc)
                 await self.cache.add(ioc.value, ioc.ioc_type)
                 stored += 1
             except Exception as exc:
@@ -107,7 +109,7 @@ class FeedScheduler:
         result = FeedIngestionResult(
             feed_name=feed.name,
             started_at=started,
-            finished_at=datetime.utcnow(),
+            finished_at=utcnow(),
             total_fetched=total,
             new_iocs=new,
             duplicate_iocs=dupes,

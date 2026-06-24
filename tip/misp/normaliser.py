@@ -15,11 +15,21 @@ HASH_LENGTHS = {
     IOCType.SHA256: 64,
 }
 
-INTERNAL_DOMAINS = frozenset({
-    "localhost", "local", "internal", "corp", "lan", "home",
-    "example.com", "example.org", "example.net",
-    "test", "invalid",
-})
+INTERNAL_DOMAINS = frozenset(
+    {
+        "localhost",
+        "local",
+        "internal",
+        "corp",
+        "lan",
+        "home",
+        "example.com",
+        "example.org",
+        "example.net",
+        "test",
+        "invalid",
+    }
+)
 
 
 class IOCNormaliser:
@@ -84,7 +94,7 @@ class IOCNormaliser:
         expected_len = HASH_LENGTHS.get(ioc.ioc_type)
         if expected_len and len(cleaned) != expected_len:
             return None
-        if not re.match(r'^[0-9a-f]+$', cleaned):
+        if not re.match(r"^[0-9a-f]+$", cleaned):
             return None
         # Skip obviously null hashes
         if cleaned in {

@@ -37,10 +37,19 @@ class SentinelClient:
             return self._token
         try:
             result = subprocess.run(
-                ["az", "account", "get-access-token", "--resource", "https://management.azure.com/"],
-                capture_output=True, text=True, timeout=15,
+                [
+                    "az",
+                    "account",
+                    "get-access-token",
+                    "--resource",
+                    "https://management.azure.com/",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             import json
+
             data = json.loads(result.stdout)
             self._token = data.get("accessToken", "")
             return self._token
@@ -104,11 +113,7 @@ class SentinelClient:
 
     async def update_incident_labels(self, incident_id: str, labels: list[str]) -> bool:
         token = await self.get_token()
-        body = {
-            "properties": {
-                "labels": [{"labelName": label} for label in labels]
-            }
-        }
+        body = {"properties": {"labels": [{"labelName": label} for label in labels]}}
         try:
             async with self._client(token) as client:
                 resp = await client.patch(

@@ -3,19 +3,19 @@ from __future__ import annotations
 import ipaddress
 import logging
 import re
-from datetime import datetime
 
 from tip.core.models import IOC, IOCType, ThreatLevel
+from tip.core.timeutil import utcnow
 from tip.misp.client import MISPClient
 
 logger = logging.getLogger(__name__)
 
 # Regex patterns for extracting IOCs from raw text/fields
-_IP_RE = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
-_HASH_MD5_RE = re.compile(r'\b[0-9a-fA-F]{32}\b')
-_HASH_SHA1_RE = re.compile(r'\b[0-9a-fA-F]{40}\b')
-_HASH_SHA256_RE = re.compile(r'\b[0-9a-fA-F]{64}\b')
-_DOMAIN_RE = re.compile(r'\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b')
+_IP_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+_HASH_MD5_RE = re.compile(r"\b[0-9a-fA-F]{32}\b")
+_HASH_SHA1_RE = re.compile(r"\b[0-9a-fA-F]{40}\b")
+_HASH_SHA256_RE = re.compile(r"\b[0-9a-fA-F]{64}\b")
+_DOMAIN_RE = re.compile(r"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}\b")
 
 PRIVATE_NETWORKS = [
     ipaddress.ip_network("10.0.0.0/8"),
@@ -58,9 +58,11 @@ class MISPLookup:
                 if ioc:
                     # Enrich with event context tags
                     context = await self.misp.get_ioc_context(value)
-                    ioc = ioc.model_copy(update={
-                        "tags": context.get("tags", ioc.tags),
-                    })
+                    ioc = ioc.model_copy(
+                        update={
+                            "tags": context.get("tags", ioc.tags),
+                        }
+                    )
                     matched.append(ioc)
                     break  # one match per value is enough
 
@@ -83,10 +85,18 @@ class MISPLookup:
     def _extract_elastic_iocs(self, alert: dict) -> set[str]:
         values: set[str] = set()
         field_paths = [
-            "source.ip", "destination.ip", "network.destination.ip",
-            "dns.question.name", "url.domain", "url.full",
-            "process.hash.sha256", "file.hash.sha256", "file.hash.md5",
-            "host.ip", "client.ip", "server.ip",
+            "source.ip",
+            "destination.ip",
+            "network.destination.ip",
+            "dns.question.name",
+            "url.domain",
+            "url.full",
+            "process.hash.sha256",
+            "file.hash.sha256",
+            "file.hash.md5",
+            "host.ip",
+            "client.ip",
+            "server.ip",
         ]
         # Elastic hits may have _source as nested OR as flat dot-notation keys
         source = alert.get("_source", alert)
@@ -103,8 +113,10 @@ class MISPLookup:
 
         # Also look for flat dot-notation keys at the top level
         for key, val in source.items():
-            if isinstance(val, str) and any(key.startswith(prefix) for prefix in
-                                            ("source.", "destination.", "dns.", "url.", "file.", "process.")):
+            if isinstance(val, str) and any(
+                key.startswith(prefix)
+                for prefix in ("source.", "destination.", "dns.", "url.", "file.", "process.")
+            ):
                 values.add(val.strip())
 
         # Scan for IP/hash patterns in the raw alert
@@ -218,8 +230,9 @@ class MISPLookup:
             if not value:
                 return None
 
-            tags = [t.get("name", "") if isinstance(t, dict) else str(t)
-                    for t in attr.get("Tag", [])]
+            tags = [
+                t.get("name", "") if isinstance(t, dict) else str(t) for t in attr.get("Tag", [])
+            ]
 
             event = attr.get("Event", {})
             event_info = event.get("info", "") if isinstance(event, dict) else ""
@@ -231,8 +244,8 @@ class MISPLookup:
                 threat_level=ThreatLevel.UNKNOWN,
                 tags=tags,
                 description=attr.get("comment", ""),
-                first_seen=datetime.utcnow(),
-                last_seen=datetime.utcnow(),
+                first_seen=utcnow(),
+                last_seen=utcnow(),
                 confidence=75,
                 misp_event_id=str(attr.get("event_id", "")),
                 misp_attribute_id=str(attr.get("id", "")),

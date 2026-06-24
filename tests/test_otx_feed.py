@@ -1,22 +1,31 @@
 """Tests for OTXFeed — all HTTP mocked with respx."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 import respx
-import httpx
 
 from tip.core.config import Settings
 from tip.core.models import IOCType, ThreatLevel
 from tip.feeds.otx_feed import OTXFeed
 
 
+def _now():
+    """Naive-UTC now for test fixtures."""
+    from datetime import datetime
+
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def _settings(**kwargs) -> Settings:
     defaults = dict(
-        misp_api_key="x", otx_api_key="test-key",
-        otx_pulse_limit=5, otx_lookback_days=7,
+        misp_api_key="x",
+        otx_api_key="test-key",
+        otx_pulse_limit=5,
+        otx_lookback_days=7,
     )
     defaults.update(kwargs)
     return Settings(**defaults)
@@ -37,7 +46,7 @@ def _pulse(
             {"type": "domain", "indicator": "evil.com", "description": ""},
         ]
     if created is None:
-        created = datetime.utcnow().isoformat()
+        created = _now().isoformat()
     return {
         "id": pulse_id,
         "name": name,
@@ -118,9 +127,9 @@ async def test_skip_unknown_indicator_types():
     feed = OTXFeed(settings)
 
     indicators = [
-        {"type": "CIDR", "indicator": "10.0.0.0/8"},        # not mapped
+        {"type": "CIDR", "indicator": "10.0.0.0/8"},  # not mapped
         {"type": "BitcoinAddress", "indicator": "1BvBM..."},  # not mapped
-        {"type": "IPv4", "indicator": "8.8.8.8"},             # valid
+        {"type": "IPv4", "indicator": "8.8.8.8"},  # valid
     ]
     pulse_data = {"results": [_pulse(indicators=indicators)]}
 
@@ -176,6 +185,7 @@ async def test_lookback_date_is_correct():
     captured_params = {}
 
     with respx.mock:
+
         def capture(request):
             captured_params.update(dict(request.url.params))
             return httpx.Response(200, json={"results": []})
@@ -186,7 +196,7 @@ async def test_lookback_date_is_correct():
     assert "modified_since" in captured_params
     since_str = captured_params["modified_since"]
     since_dt = datetime.fromisoformat(since_str)
-    expected = datetime.utcnow() - timedelta(days=3)
+    expected = _now() - timedelta(days=3)
     # Within 2 minutes of expected
     assert abs((since_dt - expected).total_seconds()) < 120
     await feed.close()
@@ -198,8 +208,14 @@ async def test_tlp_maps_to_threat_level():
     settings = _settings()
     feed = OTXFeed(settings)
 
-    for tlp, expected_level in [("red", ThreatLevel.HIGH), ("amber", ThreatLevel.MEDIUM), ("green", ThreatLevel.LOW)]:
-        pulse_data = {"results": [_pulse(tlp=tlp, indicators=[{"type": "IPv4", "indicator": "1.1.1.1"}])]}
+    for tlp, expected_level in [
+        ("red", ThreatLevel.HIGH),
+        ("amber", ThreatLevel.MEDIUM),
+        ("green", ThreatLevel.LOW),
+    ]:
+        pulse_data = {
+            "results": [_pulse(tlp=tlp, indicators=[{"type": "IPv4", "indicator": "1.1.1.1"}])]
+        }
         with respx.mock:
             respx.get("https://otx.alienvault.com/api/v1/pulses/subscribed").mock(
                 return_value=httpx.Response(200, json=pulse_data)

@@ -1,13 +1,19 @@
 """Tests for AlertEnricher — mocks MISPLookup, TagWriter, SlackNotifier."""
+
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from tip.core.models import IOC, IOCType, ThreatLevel
 from tip.enrichment.alert_enricher import AlertEnricher
+
+
+def _now():
+    """Naive-UTC now for test fixtures."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _ioc(value="1.2.3.4", tags=None, attack_techniques=None) -> IOC:
@@ -18,8 +24,8 @@ def _ioc(value="1.2.3.4", tags=None, attack_techniques=None) -> IOC:
         threat_level=ThreatLevel.HIGH,
         tags=tags or ["threat-actor:APT28"],
         description="Test IOC",
-        first_seen=datetime.utcnow(),
-        last_seen=datetime.utcnow(),
+        first_seen=_now(),
+        last_seen=_now(),
         confidence=80,
         attack_techniques=attack_techniques or ["T1071"],
     )

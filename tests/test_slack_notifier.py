@@ -1,16 +1,21 @@
 """Tests for SlackNotifier — mocked with respx."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from unittest.mock import MagicMock
+from datetime import UTC, datetime
 
+import httpx
 import pytest
 import respx
-import httpx
 
 from tip.core.config import Settings
-from tip.core.models import EnrichedAlert, FeedIngestionResult, IOC, IOCType, ThreatLevel
+from tip.core.models import IOC, EnrichedAlert, FeedIngestionResult, IOCType, ThreatLevel
 from tip.notification.slack_notifier import SlackNotifier
+
+
+def _now():
+    """Naive-UTC now for test fixtures."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _settings(webhook="https://hooks.slack.com/test/webhook", notify_on=None) -> Settings:
@@ -29,8 +34,8 @@ def _ioc(value="1.2.3.4") -> IOC:
         threat_level=ThreatLevel.HIGH,
         tags=["threat-actor:APT28"],
         description="C2 server used by APT28",
-        first_seen=datetime.utcnow(),
-        last_seen=datetime.utcnow(),
+        first_seen=_now(),
+        last_seen=_now(),
         confidence=85,
         threat_score=82.0,
         attack_techniques=["T1071"],
@@ -44,7 +49,7 @@ def _alert(severity="high", matched=True) -> EnrichedAlert:
         alert_name="Suspicious Outbound Connection",
         severity=severity,
         source_siem="elastic",
-        triggered_at=datetime.utcnow(),
+        triggered_at=_now(),
         matched_iocs=iocs,
         threat_actors=["APT28"] if matched else [],
         campaigns=[],
@@ -57,8 +62,8 @@ def _alert(severity="high", matched=True) -> EnrichedAlert:
 def _feed_result(errors=0, new_iocs=10) -> FeedIngestionResult:
     return FeedIngestionResult(
         feed_name="otx",
-        started_at=datetime.utcnow(),
-        finished_at=datetime.utcnow(),
+        started_at=_now(),
+        finished_at=_now(),
         total_fetched=new_iocs,
         new_iocs=new_iocs,
         duplicate_iocs=0,

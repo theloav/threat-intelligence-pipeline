@@ -1,12 +1,18 @@
 """Tests for IOCNormaliser."""
+
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
 from tip.core.models import IOC, IOCType, ThreatLevel
 from tip.misp.normaliser import IOCNormaliser
+
+
+def _now():
+    """Naive-UTC now for test fixtures."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _ioc(value: str, ioc_type: IOCType) -> IOC:
@@ -15,8 +21,8 @@ def _ioc(value: str, ioc_type: IOCType) -> IOC:
         ioc_type=ioc_type,
         source_feed="test",
         threat_level=ThreatLevel.MEDIUM,
-        first_seen=datetime.utcnow(),
-        last_seen=datetime.utcnow(),
+        first_seen=_now(),
+        last_seen=_now(),
     )
 
 
@@ -143,7 +149,7 @@ def test_normalise_batch_deduplicates(norm):
     result = norm.normalise_batch(iocs)
     values = [i.value for i in result]
     assert values.count("8.8.8.8") == 1  # deduplicated
-    assert "192.168.1.1" not in values   # filtered
+    assert "192.168.1.1" not in values  # filtered
     assert "evil.com" in values
 
 

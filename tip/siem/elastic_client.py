@@ -34,9 +34,7 @@ class ElasticClient:
         query = {
             "size": size,
             "sort": [{"@timestamp": {"order": "desc"}}],
-            "query": {
-                "range": {"@timestamp": {"gte": since_str}}
-            },
+            "query": {"range": {"@timestamp": {"gte": since_str}}},
         }
         try:
             async with self._client() as client:
@@ -71,12 +69,17 @@ class ElasticClient:
                 "multi_match": {
                     "query": value,
                     "fields": [
-                        "source.ip", "destination.ip", "dns.question.name",
-                        "url.domain", "url.full", "process.hash.sha256",
-                        "file.hash.sha256", "file.hash.md5",
-                    ]
+                        "source.ip",
+                        "destination.ip",
+                        "dns.question.name",
+                        "url.domain",
+                        "url.full",
+                        "process.hash.sha256",
+                        "file.hash.sha256",
+                        "file.hash.md5",
+                    ],
                 }
-            }
+            },
         }
         try:
             async with self._client() as client:

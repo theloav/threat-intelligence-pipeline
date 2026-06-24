@@ -9,6 +9,7 @@ import httpx
 
 from tip.core.config import Settings
 from tip.core.models import IOC, IOCType, ThreatLevel
+from tip.core.timeutil import utcnow
 from tip.feeds.base import BaseFeed
 
 logger = logging.getLogger(__name__)
@@ -20,13 +21,13 @@ FORM_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
 def _parse_abusech_datetime(value: str) -> datetime:
     """Parse various Abuse.ch datetime formats gracefully."""
     if not value:
-        return datetime.utcnow()
+        return utcnow()
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
         try:
             return datetime.strptime(value, fmt)
         except ValueError:
             continue
-    return datetime.utcnow()
+    return utcnow()
 
 
 class AbuseCHFeed(BaseFeed):
@@ -89,52 +90,60 @@ class AbuseCHFeed(BaseFeed):
                 tags.append(signature)
 
             first_seen = _parse_abusech_datetime(sample.get("first_seen", ""))
-            last_seen = _parse_abusech_datetime(sample.get("last_seen") or sample.get("first_seen", ""))
+            last_seen = _parse_abusech_datetime(
+                sample.get("last_seen") or sample.get("first_seen", "")
+            )
             description = f"{signature} malware sample — {file_type}"
 
-            iocs.append(IOC(
-                value=sha256,
-                ioc_type=IOCType.SHA256,
-                source_feed="abusech_malware",
-                threat_level=ThreatLevel.HIGH,
-                tags=tags,
-                description=description,
-                first_seen=first_seen,
-                last_seen=last_seen,
-                confidence=90,
-                pulse_id=sha256,
-                raw=sample,
-            ))
-
-            if md5:
-                iocs.append(IOC(
-                    value=md5,
-                    ioc_type=IOCType.MD5,
+            iocs.append(
+                IOC(
+                    value=sha256,
+                    ioc_type=IOCType.SHA256,
                     source_feed="abusech_malware",
                     threat_level=ThreatLevel.HIGH,
                     tags=tags,
                     description=description,
                     first_seen=first_seen,
                     last_seen=last_seen,
-                    confidence=85,
+                    confidence=90,
                     pulse_id=sha256,
                     raw=sample,
-                ))
+                )
+            )
+
+            if md5:
+                iocs.append(
+                    IOC(
+                        value=md5,
+                        ioc_type=IOCType.MD5,
+                        source_feed="abusech_malware",
+                        threat_level=ThreatLevel.HIGH,
+                        tags=tags,
+                        description=description,
+                        first_seen=first_seen,
+                        last_seen=last_seen,
+                        confidence=85,
+                        pulse_id=sha256,
+                        raw=sample,
+                    )
+                )
 
             if file_name:
-                iocs.append(IOC(
-                    value=file_name,
-                    ioc_type=IOCType.FILENAME,
-                    source_feed="abusech_malware",
-                    threat_level=ThreatLevel.MEDIUM,
-                    tags=tags,
-                    description=description,
-                    first_seen=first_seen,
-                    last_seen=last_seen,
-                    confidence=70,
-                    pulse_id=sha256,
-                    raw=sample,
-                ))
+                iocs.append(
+                    IOC(
+                        value=file_name,
+                        ioc_type=IOCType.FILENAME,
+                        source_feed="abusech_malware",
+                        threat_level=ThreatLevel.MEDIUM,
+                        tags=tags,
+                        description=description,
+                        first_seen=first_seen,
+                        last_seen=last_seen,
+                        confidence=70,
+                        pulse_id=sha256,
+                        raw=sample,
+                    )
+                )
 
         return iocs
 
@@ -171,19 +180,21 @@ class AbuseCHFeed(BaseFeed):
             last_online = _parse_abusech_datetime(entry.get("date_added", ""))
             entry_id = str(entry.get("id", ""))
 
-            iocs.append(IOC(
-                value=url_value,
-                ioc_type=IOCType.URL,
-                source_feed="abusech_url",
-                threat_level=threat_level,
-                tags=tags,
-                description=f"URLhaus — {threat}",
-                first_seen=date_added,
-                last_seen=last_online,
-                confidence=80,
-                pulse_id=entry_id,
-                raw=entry,
-            ))
+            iocs.append(
+                IOC(
+                    value=url_value,
+                    ioc_type=IOCType.URL,
+                    source_feed="abusech_url",
+                    threat_level=threat_level,
+                    tags=tags,
+                    description=f"URLhaus — {threat}",
+                    first_seen=date_added,
+                    last_seen=last_online,
+                    confidence=80,
+                    pulse_id=entry_id,
+                    raw=entry,
+                )
+            )
 
             # Also add host as domain or IP IOC
             host = entry.get("host", "").strip()
@@ -195,19 +206,21 @@ class AbuseCHFeed(BaseFeed):
 
             if host:
                 host_type = self._classify_host(host)
-                iocs.append(IOC(
-                    value=host,
-                    ioc_type=host_type,
-                    source_feed="abusech_url",
-                    threat_level=threat_level,
-                    tags=tags,
-                    description=f"URLhaus host — {threat}",
-                    first_seen=date_added,
-                    last_seen=last_online,
-                    confidence=75,
-                    pulse_id=entry_id,
-                    raw=entry,
-                ))
+                iocs.append(
+                    IOC(
+                        value=host,
+                        ioc_type=host_type,
+                        source_feed="abusech_url",
+                        threat_level=threat_level,
+                        tags=tags,
+                        description=f"URLhaus host — {threat}",
+                        first_seen=date_added,
+                        last_seen=last_online,
+                        confidence=75,
+                        pulse_id=entry_id,
+                        raw=entry,
+                    )
+                )
 
         return iocs
 
@@ -256,21 +269,25 @@ class AbuseCHFeed(BaseFeed):
             tags = [t for t in tags if t]
 
             first_seen = _parse_abusech_datetime(entry.get("first_seen", ""))
-            last_seen = _parse_abusech_datetime(entry.get("last_seen") or entry.get("first_seen", ""))
+            last_seen = _parse_abusech_datetime(
+                entry.get("last_seen") or entry.get("first_seen", "")
+            )
 
-            iocs.append(IOC(
-                value=value,
-                ioc_type=ioc_type,
-                source_feed="threatfox",
-                threat_level=threat_level,
-                tags=tags,
-                description=f"ThreatFox — {malware}",
-                first_seen=first_seen,
-                last_seen=last_seen,
-                confidence=confidence_level,
-                pulse_id=str(entry.get("id", "")),
-                raw=entry,
-            ))
+            iocs.append(
+                IOC(
+                    value=value,
+                    ioc_type=ioc_type,
+                    source_feed="threatfox",
+                    threat_level=threat_level,
+                    tags=tags,
+                    description=f"ThreatFox — {malware}",
+                    first_seen=first_seen,
+                    last_seen=last_seen,
+                    confidence=confidence_level,
+                    pulse_id=str(entry.get("id", "")),
+                    raw=entry,
+                )
+            )
 
         return iocs
 
@@ -292,6 +309,7 @@ class AbuseCHFeed(BaseFeed):
     def _classify_host(self, host: str) -> IOCType:
         """Return IP or DOMAIN based on whether host is numeric."""
         import ipaddress
+
         try:
             ipaddress.ip_address(host)
             return IOCType.IP

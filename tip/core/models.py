@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from tip.core.timeutil import utcnow
+
 
 class IOCType(str, Enum):
     IP = "ip-dst"
@@ -56,7 +58,7 @@ class IOC(BaseModel):
         return self.confidence >= 75
 
     def age_days(self) -> int:
-        return (datetime.utcnow() - self.first_seen).days
+        return (utcnow() - self.first_seen).days
 
 
 class EnrichedAlert(BaseModel):
@@ -71,7 +73,7 @@ class EnrichedAlert(BaseModel):
     threat_actors: list[str] = Field(default_factory=list)
     campaigns: list[str] = Field(default_factory=list)
     enrichment_tags: list[str] = Field(default_factory=list)
-    enriched_at: datetime = Field(default_factory=datetime.utcnow)
+    enriched_at: datetime = Field(default_factory=utcnow)
     notification_sent: bool = False
 
     # Advanced: risk scoring
@@ -119,6 +121,7 @@ class MISPEvent(BaseModel):
 
 class IOCRelationship(BaseModel):
     """Tracks relationships between IOCs for correlation analysis."""
+
     source_ioc: str
     target_ioc: str
     relationship_type: str  # "resolves-to", "dropped-by", "communicates-with"
@@ -129,6 +132,7 @@ class IOCRelationship(BaseModel):
 
 class ThreatActorProfile(BaseModel):
     """Aggregated profile for a threat actor."""
+
     name: str
     aliases: list[str] = Field(default_factory=list)
     description: str = ""
@@ -144,7 +148,8 @@ class ThreatActorProfile(BaseModel):
 
 class PipelineMetrics(BaseModel):
     """Real-time pipeline health metrics."""
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+    timestamp: datetime = Field(default_factory=utcnow)
     total_iocs_cached: int = 0
     iocs_by_feed: dict[str, int] = Field(default_factory=dict)
     iocs_by_type: dict[str, int] = Field(default_factory=dict)

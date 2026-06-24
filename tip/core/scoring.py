@@ -11,9 +11,10 @@ Scores are 0-100. Factors:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from tip.core.models import IOC, IOCType, ThreatLevel
+from tip.core.timeutil import utcnow
 
 SOURCE_CREDIBILITY: dict[str, float] = {
     "abusech_malware": 95.0,  # MalwareBazaar — lab-confirmed
@@ -41,16 +42,33 @@ THREAT_LEVEL_MULTIPLIER: dict[ThreatLevel, float] = {
 }
 
 APT_SIGNAL_TAGS = {
-    "apt", "apt28", "apt29", "apt30", "apt32", "apt33", "apt34", "apt38",
-    "lazarus", "cozy bear", "fancy bear", "carbanak", "fin7", "ta505",
-    "emotet", "trickbot", "ryuk", "darkside", "revil", "conti",
+    "apt",
+    "apt28",
+    "apt29",
+    "apt30",
+    "apt32",
+    "apt33",
+    "apt34",
+    "apt38",
+    "lazarus",
+    "cozy bear",
+    "fancy bear",
+    "carbanak",
+    "fin7",
+    "ta505",
+    "emotet",
+    "trickbot",
+    "ryuk",
+    "darkside",
+    "revil",
+    "conti",
 }
 
 
 def compute_recency_score(ioc: IOC, now: datetime | None = None) -> float:
     """Score decays from 100 → 0 over 30 days."""
     if now is None:
-        now = datetime.utcnow()
+        now = utcnow()
     age = (now - ioc.last_seen).total_seconds() / 3600  # hours
     if age <= 24:
         return 100.0

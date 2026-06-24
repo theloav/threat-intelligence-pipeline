@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from tip.core.models import IOC
+from tip.core.timeutil import utcnow
 
 
 class BaseFeed(ABC):
@@ -21,8 +22,8 @@ class BaseFeed(ABC):
 
     def get_lookback_since(self, days: int) -> datetime:
         """Return datetime N days ago in UTC."""
-        return datetime.now(timezone.utc) - timedelta(days=days)
+        return datetime.now(UTC) - timedelta(days=days)
 
     def get_lookback_since_naive(self, days: int) -> datetime:
         """Return naive UTC datetime N days ago."""
-        return datetime.utcnow() - timedelta(days=days)
+        return utcnow() - timedelta(days=days)

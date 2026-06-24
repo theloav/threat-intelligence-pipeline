@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 import httpx
 
@@ -58,9 +57,15 @@ class SlackNotifier:
                 "type": "section",
                 "fields": [
                     {"type": "mrkdwn", "text": f"*Severity:* {sev_emoji} {alert.severity.upper()}"},
-                    {"type": "mrkdwn", "text": f"*Source SIEM:* {siem_emoji} {alert.source_siem.title()}"},
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Source SIEM:* {siem_emoji} {alert.source_siem.title()}",
+                    },
                     {"type": "mrkdwn", "text": f"*Alert ID:* `{alert.alert_id}`"},
-                    {"type": "mrkdwn", "text": f"*Triggered:* {alert.triggered_at.strftime('%Y-%m-%d %H:%M UTC')}"},
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*Triggered:* {alert.triggered_at.strftime('%Y-%m-%d %H:%M UTC')}",
+                    },
                 ],
             },
             {"type": "divider"},
@@ -69,19 +74,24 @@ class SlackNotifier:
         # IOC Matches
         ioc_lines = []
         for ioc in alert.matched_iocs[:5]:
-            score_indicator = "🔴" if ioc.threat_score >= 75 else "🟡" if ioc.threat_score >= 50 else "🟢"
+            score_indicator = (
+                "🔴" if ioc.threat_score >= 75 else "🟡" if ioc.threat_score >= 50 else "🟢"
+            )
             desc = ioc.description[:60] + "..." if len(ioc.description) > 60 else ioc.description
             ioc_lines.append(f"{score_indicator} `{ioc.ioc_type.value}` *{ioc.value}* — {desc}")
         if len(alert.matched_iocs) > 5:
             ioc_lines.append(f"_...and {len(alert.matched_iocs) - 5} more matches_")
 
-        blocks.append({
-            "type": "section",
-            "text": {
-                "type": "mrkdwn",
-                "text": f"*🎯 IOC Matches ({len(alert.matched_iocs)} found)*\n" + "\n".join(ioc_lines),
-            },
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*🎯 IOC Matches ({len(alert.matched_iocs)} found)*\n"
+                    + "\n".join(ioc_lines),
+                },
+            }
+        )
 
         # Threat Context
         actors = ", ".join(alert.threat_actors[:5]) or "Unknown"
@@ -89,52 +99,60 @@ class SlackNotifier:
         feeds = list({ioc.source_feed for ioc in alert.matched_iocs})
         techniques = ", ".join(alert.attack_techniques[:5]) or "None identified"
 
-        blocks.append({
-            "type": "section",
-            "fields": [
-                {"type": "mrkdwn", "text": f"*🕵️ Threat Actors:*\n{actors}"},
-                {"type": "mrkdwn", "text": f"*📋 Campaigns:*\n{campaigns}"},
-                {"type": "mrkdwn", "text": f"*📡 Source Feeds:*\n{', '.join(feeds)}"},
-                {"type": "mrkdwn", "text": f"*⚔️ ATT&CK Techniques:*\n{techniques}"},
-            ],
-        })
+        blocks.append(
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*🕵️ Threat Actors:*\n{actors}"},
+                    {"type": "mrkdwn", "text": f"*📋 Campaigns:*\n{campaigns}"},
+                    {"type": "mrkdwn", "text": f"*📡 Source Feeds:*\n{', '.join(feeds)}"},
+                    {"type": "mrkdwn", "text": f"*⚔️ ATT&CK Techniques:*\n{techniques}"},
+                ],
+            }
+        )
 
         # Risk Score
         if alert.risk_score > 0:
             risk_bar = "█" * int(alert.risk_score / 10) + "░" * (10 - int(alert.risk_score / 10))
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*🎯 Risk Score:* `{risk_bar}` {alert.risk_score:.0f}/100",
-                },
-            })
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*🎯 Risk Score:* `{risk_bar}` {alert.risk_score:.0f}/100",
+                    },
+                }
+            )
 
         # Tags Written Back
         if alert.enrichment_tags:
             tags_text = " ".join(f"`{t}`" for t in alert.enrichment_tags[:8])
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*🏷️ Tags Written to SIEM:*\n{tags_text}",
-                },
-            })
+            blocks.append(
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"*🏷️ Tags Written to SIEM:*\n{tags_text}",
+                    },
+                }
+            )
 
         blocks.append({"type": "divider"})
-        blocks.append({
-            "type": "context",
-            "elements": [
-                {
-                    "type": "mrkdwn",
-                    "text": (
-                        f"🤖 threat-intel-pipeline | "
-                        f"Enriched at {alert.enriched_at.strftime('%Y-%m-%d %H:%M UTC')} | "
-                        f"{len(alert.extracted_iocs)} IOCs extracted, {len(alert.matched_iocs)} matched"
-                    ),
-                }
-            ],
-        })
+        blocks.append(
+            {
+                "type": "context",
+                "elements": [
+                    {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"🤖 threat-intel-pipeline | "
+                            f"Enriched at {alert.enriched_at.strftime('%Y-%m-%d %H:%M UTC')} | "
+                            f"{len(alert.extracted_iocs)} IOCs extracted, {len(alert.matched_iocs)} matched"
+                        ),
+                    }
+                ],
+            }
+        )
 
         return {
             "text": f"🚨 TIP Alert: {alert.alert_name} [{alert.severity.upper()}] — {len(alert.matched_iocs)} IOC matches",
@@ -191,7 +209,10 @@ class SlackNotifier:
             "blocks": [
                 {
                     "type": "section",
-                    "text": {"type": "mrkdwn", "text": "✅ *TIP health check* — Slack integration working"},
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": "✅ *TIP health check* — Slack integration working",
+                    },
                 }
             ],
         }

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from tip.core.models import EnrichedAlert, IOC
+from tip.core.models import IOC, EnrichedAlert
 from tip.core.scoring import score_iocs_batch
+from tip.core.timeutil import utcnow
 from tip.enrichment.misp_lookup import MISPLookup
 from tip.enrichment.tag_writer import TagWriter
 
@@ -22,9 +23,9 @@ class AlertEnricher:
         self,
         misp_lookup: MISPLookup,
         tag_writer: TagWriter,
-        sentinel_client: "SentinelClient | None",
-        elastic_client: "ElasticClient | None",
-        slack_notifier: "SlackNotifier",
+        sentinel_client: SentinelClient | None,
+        elastic_client: ElasticClient | None,
+        slack_notifier: SlackNotifier,
         notify_on: list[str] | None = None,
     ) -> None:
         self.misp_lookup = misp_lookup
@@ -96,7 +97,7 @@ class AlertEnricher:
             threat_actors=threat_actors,
             campaigns=campaigns,
             enrichment_tags=enrichment_tags,
-            enriched_at=datetime.utcnow(),
+            enriched_at=utcnow(),
             notification_sent=False,
             risk_score=risk_score,
             attack_techniques=sorted(attack_techniques),
@@ -138,10 +139,15 @@ class AlertEnricher:
                 logger.error("Sentinel alert enrichment failed: %s", exc)
         return results
 
-    async def run_enrichment_cycle(self, lookback_minutes: int = 60) -> dict:
-        """Run one enrichment cycle across all configured SIEMs."""
-        from datetime import timedelta
-        since = datetime.utcnow() - timedelta(minutes=lookback_minutes)
+    async def run_enrichment_cycle(
+        self, lookback_minutes: int = 60, since: datetime | None = None
+    ) -> dict:
+        """Run one enrichment cycle across all configured SIEMs.
+
+        If ``since`` is provided it takes precedence over ``lookback_minutes``.
+        """
+        if since is None:
+            since = utcnow() - timedelta(minutes=lookback_minutes)
 
         elastic_results = await self.enrich_elastic_alerts(since)
         sentinel_results = await self.enrich_sentinel_alerts(since)
@@ -184,7 +190,9 @@ class AlertEnricher:
     def _extract_severity(self, alert: dict, source_siem: str) -> str:
         if source_siem == "elastic":
             source = alert.get("_source", alert)
-            return str(source.get("kibana.alert.severity", source.get("severity", "medium"))).lower()
+            return str(
+                source.get("kibana.alert.severity", source.get("severity", "medium"))
+            ).lower()
         elif source_siem == "sentinel":
             props = alert.get("properties", {})
             return str(props.get("severity", "Medium")).lower()
@@ -204,4 +212,4 @@ class AlertEnricher:
                     return datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
         except (ValueError, AttributeError):
             pass
-        return datetime.utcnow()
+        return utcnow()

@@ -1,22 +1,28 @@
 """Tests for MISPLookup — mocks PyMISP and MISPClient."""
+
 from __future__ import annotations
 
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from tip.core.models import IOCType
 from tip.enrichment.misp_lookup import MISPLookup
 
 
 def _make_lookup():
     """Create MISPLookup with fully mocked MISPClient."""
     misp_client = MagicMock()
-    misp_client.get_ioc_context = AsyncMock(return_value={
-        "matched": False, "attributes": [], "events": [],
-        "tags": [], "threat_actors": [], "campaigns": [], "feeds": [],
-    })
+    misp_client.get_ioc_context = AsyncMock(
+        return_value={
+            "matched": False,
+            "attributes": [],
+            "events": [],
+            "tags": [],
+            "threat_actors": [],
+            "campaigns": [],
+            "feeds": [],
+        }
+    )
     misp_client.lookup_many = AsyncMock(return_value={})
     return MISPLookup(misp_client), misp_client
 
@@ -25,22 +31,27 @@ def _make_lookup():
 async def test_lookup_matched_ioc_returns_context():
     lookup, misp_client = _make_lookup()
 
-    misp_client.get_ioc_context = AsyncMock(return_value={
-        "matched": True,
-        "attributes": [
-            {
-                "id": "1", "type": "ip-dst", "value": "1.2.3.4",
-                "comment": "C2 server", "event_id": "10",
-                "Tag": [{"name": "threat-actor:APT28"}],
-                "Event": {"id": "10", "info": "otx — 2024-01-15"},
-            }
-        ],
-        "events": [{"id": "10", "info": "otx — 2024-01-15"}],
-        "tags": ["threat-actor:APT28"],
-        "threat_actors": ["APT28"],
-        "campaigns": [],
-        "feeds": ["otx"],
-    })
+    misp_client.get_ioc_context = AsyncMock(
+        return_value={
+            "matched": True,
+            "attributes": [
+                {
+                    "id": "1",
+                    "type": "ip-dst",
+                    "value": "1.2.3.4",
+                    "comment": "C2 server",
+                    "event_id": "10",
+                    "Tag": [{"name": "threat-actor:APT28"}],
+                    "Event": {"id": "10", "info": "otx — 2024-01-15"},
+                }
+            ],
+            "events": [{"id": "10", "info": "otx — 2024-01-15"}],
+            "tags": ["threat-actor:APT28"],
+            "threat_actors": ["APT28"],
+            "campaigns": [],
+            "feeds": ["otx"],
+        }
+    )
 
     result = await lookup.lookup_ioc("1.2.3.4")
     assert result["matched"] is True
@@ -133,20 +144,33 @@ async def test_private_ip_not_extracted():
 async def test_lookup_alert_iocs_returns_matched():
     lookup, misp_client = _make_lookup()
 
-    misp_client.lookup_many = AsyncMock(return_value={
-        "5.5.5.5": [
-            {
-                "id": "2", "type": "ip-dst", "value": "5.5.5.5",
-                "comment": "Known C2", "event_id": "20",
-                "Tag": [], "Event": {"id": "20", "info": "otx — 2024-01-15"},
-            }
-        ],
-        "8.8.8.8": [],  # no match
-    })
-    misp_client.get_ioc_context = AsyncMock(return_value={
-        "matched": True, "attributes": [], "events": [], "tags": [],
-        "threat_actors": [], "campaigns": [], "feeds": [],
-    })
+    misp_client.lookup_many = AsyncMock(
+        return_value={
+            "5.5.5.5": [
+                {
+                    "id": "2",
+                    "type": "ip-dst",
+                    "value": "5.5.5.5",
+                    "comment": "Known C2",
+                    "event_id": "20",
+                    "Tag": [],
+                    "Event": {"id": "20", "info": "otx — 2024-01-15"},
+                }
+            ],
+            "8.8.8.8": [],  # no match
+        }
+    )
+    misp_client.get_ioc_context = AsyncMock(
+        return_value={
+            "matched": True,
+            "attributes": [],
+            "events": [],
+            "tags": [],
+            "threat_actors": [],
+            "campaigns": [],
+            "feeds": [],
+        }
+    )
 
     matched = await lookup.lookup_alert_iocs(["5.5.5.5", "8.8.8.8"])
     assert len(matched) == 1

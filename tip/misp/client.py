@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime
-from functools import lru_cache
-from typing import Any
+from datetime import date
 
 from tip.core.config import Settings
-from tip.core.models import IOC, MISPEvent, ThreatLevel
+from tip.core.models import IOC, ThreatLevel
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +33,7 @@ class MISPClient:
         """Lazy-init PyMISP (import deferred so tests can mock easily)."""
         if self._misp is None:
             from pymisp import PyMISP
+
             self._misp = PyMISP(
                 self.settings.misp_url,
                 self.settings.misp_api_key,
@@ -60,6 +59,7 @@ class MISPClient:
 
         def _add_attribute():
             from pymisp import MISPAttribute
+
             attr = MISPAttribute()
             attr.type = ioc.ioc_type.value
             attr.value = ioc.value
@@ -71,15 +71,19 @@ class MISPClient:
             result = await asyncio.to_thread(_add_attribute)
             if isinstance(result, dict) and "Attribute" in result:
                 attr = result["Attribute"]
-                ioc = ioc.model_copy(update={
-                    "misp_event_id": event_id,
-                    "misp_attribute_id": str(attr.get("id", "")),
-                })
+                ioc = ioc.model_copy(
+                    update={
+                        "misp_event_id": event_id,
+                        "misp_attribute_id": str(attr.get("id", "")),
+                    }
+                )
             elif hasattr(result, "id"):
-                ioc = ioc.model_copy(update={
-                    "misp_event_id": event_id,
-                    "misp_attribute_id": str(result.id),
-                })
+                ioc = ioc.model_copy(
+                    update={
+                        "misp_event_id": event_id,
+                        "misp_attribute_id": str(result.id),
+                    }
+                )
         except Exception as exc:
             logger.warning("MISP add_attribute failed for %s: %s", ioc.value, exc)
             ioc = ioc.model_copy(update={"misp_event_id": event_id})
@@ -92,6 +96,7 @@ class MISPClient:
     async def store_iocs_batch(self, iocs: list[IOC]) -> list[IOC]:
         """Group IOCs by source_feed and store."""
         from itertools import groupby
+
         stored: list[IOC] = []
         sorted_iocs = sorted(iocs, key=lambda i: i.source_feed)
         for _feed, group in groupby(sorted_iocs, key=lambda i: i.source_feed):
@@ -143,6 +148,7 @@ class MISPClient:
 
         def _create_event():
             from pymisp import MISPEvent as PyMISPEvent
+
             event = PyMISPEvent()
             event.info = title
             event.threat_level_id = THREAT_LEVEL_ID.get(threat_level, "4")
@@ -168,8 +174,15 @@ class MISPClient:
         """Full enrichment context for a single IOC value."""
         attributes = await self.lookup(value)
         if not attributes:
-            return {"matched": False, "attributes": [], "events": [], "tags": [],
-                    "threat_actors": [], "campaigns": [], "feeds": []}
+            return {
+                "matched": False,
+                "attributes": [],
+                "events": [],
+                "tags": [],
+                "threat_actors": [],
+                "campaigns": [],
+                "feeds": [],
+            }
 
         all_tags: set[str] = set()
         threat_actors: list[str] = []

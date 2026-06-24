@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 
 from tip.core.config import Settings
 from tip.core.models import IOCType
+from tip.core.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,9 @@ class DedupCache:
                 PRIMARY KEY (value, ioc_type)
             )
         """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_ioc_cache_lookup ON ioc_cache (value, ioc_type)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ioc_cache_lookup ON ioc_cache (value, ioc_type)"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ioc_cache_expires ON ioc_cache (expires)")
         conn.commit()
 
@@ -55,9 +57,12 @@ class DedupCache:
     def _init_redis(self, url: str) -> None:
         try:
             import redis.asyncio as aioredis
+
             self._redis = aioredis.from_url(url, decode_responses=True)
-        except ImportError:
-            raise RuntimeError("Install redis-py for Redis cache backend: pip install redis")
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install redis-py for Redis cache backend: pip install redis"
+            ) from exc
 
     def _cache_key(self, value: str, ioc_type: IOCType) -> str:
         return f"tip:ioc:{ioc_type.value}:{value}"
@@ -69,7 +74,7 @@ class DedupCache:
             return await self._redis_exists(value, ioc_type)
 
     def _sqlite_exists(self, value: str, ioc_type: IOCType) -> bool:
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         with self._get_conn() as conn:
             row = conn.execute(
                 "SELECT 1 FROM ioc_cache WHERE value = ? AND ioc_type = ? AND expires > ?",
@@ -89,7 +94,7 @@ class DedupCache:
             await self._redis_add(value, ioc_type)
 
     def _sqlite_add(self, value: str, ioc_type: IOCType) -> None:
-        now = datetime.utcnow()
+        now = utcnow()
         expires = now + timedelta(days=self.ttl_days)
         with self._get_conn() as conn:
             conn.execute(
@@ -125,9 +130,11 @@ class DedupCache:
             return await self._redis_stats()
 
     def _sqlite_stats(self) -> dict:
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         with self._get_conn() as conn:
-            total = conn.execute("SELECT COUNT(*) FROM ioc_cache WHERE expires > ?", (now,)).fetchone()[0]
+            total = conn.execute(
+                "SELECT COUNT(*) FROM ioc_cache WHERE expires > ?", (now,)
+            ).fetchone()[0]
             by_type = conn.execute(
                 "SELECT ioc_type, COUNT(*) FROM ioc_cache WHERE expires > ? GROUP BY ioc_type",
                 (now,),
@@ -150,7 +157,7 @@ class DedupCache:
             return 0  # Redis handles TTL automatically
 
     def _sqlite_purge(self) -> int:
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         with self._get_conn() as conn:
             cursor = conn.execute("DELETE FROM ioc_cache WHERE expires <= ?", (now,))
             return cursor.rowcount

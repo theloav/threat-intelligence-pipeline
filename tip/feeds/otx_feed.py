@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 import httpx
 
 from tip.core.config import Settings
 from tip.core.models import IOC, IOCType, ThreatLevel
+from tip.core.timeutil import utcnow
 from tip.feeds.base import BaseFeed
 
 logger = logging.getLogger(__name__)
@@ -91,14 +92,14 @@ class OTXFeed(BaseFeed):
         attack_techniques.extend(pulse.get("attack_ids", []))
         attack_techniques = list(dict.fromkeys(attack_techniques))  # deduplicate
 
-        created = pulse.get("created", datetime.utcnow().isoformat())
+        created = pulse.get("created", utcnow().isoformat())
         modified = pulse.get("modified", created)
 
         try:
             first_seen = datetime.fromisoformat(created.replace("Z", "+00:00")).replace(tzinfo=None)
             last_seen = datetime.fromisoformat(modified.replace("Z", "+00:00")).replace(tzinfo=None)
         except (ValueError, AttributeError):
-            first_seen = last_seen = datetime.utcnow()
+            first_seen = last_seen = utcnow()
 
         for indicator in pulse.get("indicators", []):
             ioc_type_str = indicator.get("type", "")
@@ -111,7 +112,17 @@ class OTXFeed(BaseFeed):
                 continue
 
             description = indicator.get("description", "") or f"OTX pulse: {pulse_name}"
-            confidence = min(100, max(0, int(pulse.get("pulse_source", {}).get("indicator_count", 50) if isinstance(pulse.get("pulse_source"), dict) else 70)))
+            confidence = min(
+                100,
+                max(
+                    0,
+                    int(
+                        pulse.get("pulse_source", {}).get("indicator_count", 50)
+                        if isinstance(pulse.get("pulse_source"), dict)
+                        else 70
+                    ),
+                ),
+            )
 
             ioc = IOC(
                 value=value,

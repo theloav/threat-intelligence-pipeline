@@ -1,9 +1,10 @@
 """Tests for AbuseCHFeed — mocked with respx."""
+
 from __future__ import annotations
 
+import httpx
 import pytest
 import respx
-import httpx
 
 from tip.core.config import Settings
 from tip.core.models import IOCType, ThreatLevel
@@ -138,7 +139,9 @@ async def test_urlhaus_creates_url_and_domain_iocs():
         iocs = await feed.fetch()
 
     url_iocs = [i for i in iocs if i.ioc_type == IOCType.URL and i.source_feed == "abusech_url"]
-    domain_iocs = [i for i in iocs if i.ioc_type == IOCType.DOMAIN and i.source_feed == "abusech_url"]
+    domain_iocs = [
+        i for i in iocs if i.ioc_type == IOCType.DOMAIN and i.source_feed == "abusech_url"
+    ]
 
     assert len(url_iocs) >= 1
     assert "http://malicious.example.com/payload" in [i.value for i in url_iocs]
@@ -171,10 +174,14 @@ async def test_threatfox_confidence_maps_to_threat_level():
         _mock_all(respx)
         iocs = await feed.fetch()
 
-    tf_iocs = {i.value: i for i in iocs if i.source_feed == "threatfox" and i.ioc_type == IOCType.IP}
+    tf_iocs = {
+        i.value: i for i in iocs if i.source_feed == "threatfox" and i.ioc_type == IOCType.IP
+    }
 
     # confidence 80 → HIGH
-    assert tf_iocs.get("192.168.1.100") and tf_iocs["192.168.1.100"].threat_level == ThreatLevel.HIGH
+    assert (
+        tf_iocs.get("192.168.1.100") and tf_iocs["192.168.1.100"].threat_level == ThreatLevel.HIGH
+    )
     # confidence 55 → MEDIUM
     assert tf_iocs.get("1.2.3.4") and tf_iocs["1.2.3.4"].threat_level == ThreatLevel.MEDIUM
     # confidence 30 → LOW

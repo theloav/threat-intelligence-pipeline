@@ -1,19 +1,26 @@
 """Tests for DedupCache — uses in-memory SQLite for isolation."""
+
 from __future__ import annotations
 
-import asyncio
-from datetime import timedelta
-from unittest.mock import patch, MagicMock
+from datetime import UTC, timedelta
 
 import pytest
 
 from tip.core.models import IOCType
 
 
+def _now():
+    """Naive-UTC now for test fixtures."""
+    from datetime import datetime
+
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def _make_cache(ttl_days=30):
     """Create a DedupCache backed by in-memory SQLite."""
     from tip.core.config import Settings
     from tip.misp.dedup_cache import DedupCache
+
     settings = Settings(
         misp_api_key="x",
         cache_backend="sqlite",
@@ -51,16 +58,14 @@ async def test_different_type_not_matched():
 @pytest.mark.asyncio
 async def test_expired_entry_not_found():
     """Entry added with ttl=0 days should not be found (already expired)."""
-    import sqlite3
-    from datetime import datetime
 
     cache = _make_cache(ttl_days=0)
     # Manually insert with past expiry
     with cache._get_conn() as conn:
-        past = (datetime.utcnow() - timedelta(seconds=1)).isoformat()
+        past = (_now() - timedelta(seconds=1)).isoformat()
         conn.execute(
             "INSERT OR REPLACE INTO ioc_cache (value, ioc_type, first_seen, expires) VALUES (?, ?, ?, ?)",
-            ("stale.com", IOCType.DOMAIN.value, datetime.utcnow().isoformat(), past),
+            ("stale.com", IOCType.DOMAIN.value, _now().isoformat(), past),
         )
 
     result = await cache.exists("stale.com", IOCType.DOMAIN)
@@ -91,18 +96,16 @@ async def test_remove_deletes_entry():
 
 @pytest.mark.asyncio
 async def test_purge_expired_removes_old_entries():
-    import sqlite3
-    from datetime import datetime
 
     cache = _make_cache()
     # Add a valid entry
     await cache.add("good.com", IOCType.DOMAIN)
     # Add an expired entry directly
     with cache._get_conn() as conn:
-        past = (datetime.utcnow() - timedelta(seconds=1)).isoformat()
+        past = (_now() - timedelta(seconds=1)).isoformat()
         conn.execute(
             "INSERT OR REPLACE INTO ioc_cache (value, ioc_type, first_seen, expires) VALUES (?, ?, ?, ?)",
-            ("expired.com", IOCType.DOMAIN.value, datetime.utcnow().isoformat(), past),
+            ("expired.com", IOCType.DOMAIN.value, _now().isoformat(), past),
         )
 
     count = await cache.purge_expired()

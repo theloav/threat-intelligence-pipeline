@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from tip.core.models import IOC
+from tip.core.timeutil import utcnow
 
 if TYPE_CHECKING:
     from tip.siem.elastic_client import ElasticClient
@@ -15,8 +16,8 @@ logger = logging.getLogger(__name__)
 class TagWriter:
     def __init__(
         self,
-        sentinel_client: "SentinelClient | None",
-        elastic_client: "ElasticClient | None",
+        sentinel_client: SentinelClient | None,
+        elastic_client: ElasticClient | None,
     ) -> None:
         self.sentinel = sentinel_client
         self.elastic = elastic_client
@@ -29,7 +30,7 @@ class TagWriter:
                 "kibana.alert.workflow_tags": tags,
                 "tip.enriched": True,
                 "tip.tags": tags,
-                "tip.enriched_at": __import__("datetime").datetime.utcnow().isoformat(),
+                "tip.enriched_at": utcnow().isoformat(),
             }
         }
         return await self.elastic.update_alert(alert_id, update_body)
