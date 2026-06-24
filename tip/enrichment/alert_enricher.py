@@ -4,13 +4,14 @@ import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from tip.core.models import IOC, EnrichedAlert
+from tip.core.models import IOC, EnrichedAlert, ExternalEnrichmentResult
 from tip.core.scoring import score_iocs_batch
 from tip.core.timeutil import utcnow
 from tip.enrichment.misp_lookup import MISPLookup
 from tip.enrichment.tag_writer import TagWriter
 
 if TYPE_CHECKING:
+    from tip.enrichment.external_enricher import ExternalEnrichmentManager
     from tip.notification.slack_notifier import SlackNotifier
     from tip.siem.elastic_client import ElasticClient
     from tip.siem.sentinel_client import SentinelClient
@@ -27,6 +28,8 @@ class AlertEnricher:
         elastic_client: ElasticClient | None,
         slack_notifier: SlackNotifier,
         notify_on: list[str] | None = None,
+        external_manager: ExternalEnrichmentManager | None = None,
+        enrich_unmatched: bool = False,
     ) -> None:
         self.misp_lookup = misp_lookup
         self.tag_writer = tag_writer
@@ -34,6 +37,8 @@ class AlertEnricher:
         self.elastic = elastic_client
         self.slack = slack_notifier
         self.notify_on = {s.lower() for s in (notify_on or ["high", "critical"])}
+        self.external_manager = external_manager
+        self.enrich_unmatched = enrich_unmatched
 
     async def enrich_alert(self, alert: dict, source_siem: str) -> EnrichedAlert:
         """Full enrichment pipeline for a single alert."""
@@ -72,18 +77,25 @@ class AlertEnricher:
                         campaigns.append(campaign)
             attack_techniques.update(ioc.attack_techniques)
 
-        # 4. Build enrichment tags
-        enrichment_tags = self.tag_writer.build_enrichment_tags(matched_iocs)
+        # 4. External enrichment (VirusTotal / Shodan) — optional
+        external = await self._run_external_enrichment(matched_iocs, extracted)
 
-        # 5. Write tags back to SIEM (best-effort)
+        # 5. Build enrichment tags
+        enrichment_tags = self.tag_writer.build_enrichment_tags(matched_iocs)
+        enrichment_tags.extend(self._external_tags(external))
+
+        # 6. Write tags back to SIEM (best-effort)
         if enrichment_tags and alert_id:
             try:
                 await self.tag_writer.write_tags(alert_id, source_siem, enrichment_tags)
             except Exception as exc:
                 logger.warning("Tag write failed for alert %s: %s", alert_id, exc)
 
-        # Compute risk score (max threat_score of matched IOCs)
+        # Compute risk score (max threat_score of matched IOCs), boosted by
+        # external verdicts so VT/Shodan can raise the score on their own.
         risk_score = max((ioc.threat_score for ioc in matched_iocs), default=0.0)
+        external_max = max((r.malicious_score or 0 for r in external), default=0)
+        risk_score = max(risk_score, float(external_max))
 
         enriched = EnrichedAlert(
             alert_id=alert_id,
@@ -101,10 +113,12 @@ class AlertEnricher:
             notification_sent=False,
             risk_score=risk_score,
             attack_techniques=sorted(attack_techniques),
+            external_enrichment=external,
         )
 
-        # 5. Notify if matched and severity qualifies
-        if matched_iocs and severity.lower() in self.notify_on:
+        # 7. Notify if (MISP match OR external malicious verdict) and severity qualifies
+        external_malicious = any(r.is_malicious() for r in external)
+        if (matched_iocs or external_malicious) and severity.lower() in self.notify_on:
             try:
                 sent = await self.slack.notify_enriched_alert(enriched)
                 enriched = enriched.model_copy(update={"notification_sent": sent})
@@ -112,6 +126,59 @@ class AlertEnricher:
                 logger.error("Slack notification failed: %s", exc)
 
         return enriched
+
+    async def _run_external_enrichment(
+        self, matched_iocs: list[IOC], extracted: list[str]
+    ) -> list[ExternalEnrichmentResult]:
+        """Enrich matched IOCs (and optionally unmatched values) via VT/Shodan."""
+        if self.external_manager is None or not self.external_manager.active:
+            return []
+        try:
+            results = await self.external_manager.enrich_iocs(matched_iocs)
+            if self.enrich_unmatched:
+                matched_values = {ioc.value for ioc in matched_iocs}
+                unmatched = [v for v in extracted if v not in matched_values]
+                # Reuse extraction type inference: look these up as best-effort.
+                for value in unmatched:
+                    ioc_type = self._infer_type(value)
+                    if ioc_type is not None:
+                        results.extend(await self.external_manager.enrich_value(value, ioc_type))
+            return results
+        except Exception as exc:
+            logger.warning("External enrichment failed: %s", exc)
+            return []
+
+    @staticmethod
+    def _infer_type(value: str):
+        import ipaddress
+        import re
+
+        from tip.core.models import IOCType
+
+        try:
+            ipaddress.ip_address(value)
+            return IOCType.IP
+        except ValueError:
+            pass
+        if re.fullmatch(r"[0-9a-fA-F]{64}", value):
+            return IOCType.SHA256
+        if re.fullmatch(r"[0-9a-fA-F]{32}", value):
+            return IOCType.MD5
+        if value.startswith(("http://", "https://")):
+            return IOCType.URL
+        if "." in value and " " not in value:
+            return IOCType.DOMAIN
+        return None
+
+    @staticmethod
+    def _external_tags(results: list[ExternalEnrichmentResult]) -> list[str]:
+        tags: list[str] = []
+        for r in results:
+            if r.found and r.is_malicious():
+                tags.append(f"tip:{r.source}:malicious")
+            elif r.found:
+                tags.append(f"tip:{r.source}:seen")
+        return tags
 
     async def enrich_elastic_alerts(self, since: datetime) -> list[EnrichedAlert]:
         if self.elastic is None:

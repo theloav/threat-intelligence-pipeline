@@ -36,6 +36,8 @@ def _make_enricher(
     notify_on=None,
     tag_write_result=True,
     slack_result=True,
+    external_manager=None,
+    enrich_unmatched=False,
 ):
     misp_lookup = MagicMock()
     misp_lookup.extract_iocs_from_alert = MagicMock(return_value=["1.2.3.4", "evil.com"])
@@ -55,6 +57,8 @@ def _make_enricher(
         elastic_client=None,
         slack_notifier=slack,
         notify_on=notify_on or ["high", "critical"],
+        external_manager=external_manager,
+        enrich_unmatched=enrich_unmatched,
     )
     return enricher, misp_lookup, tag_writer, slack
 
@@ -166,3 +170,61 @@ async def test_tag_writer_failure_does_not_crash_enrichment():
     result = await enricher.enrich_alert(_alert(), "elastic")
     assert result is not None
     assert result.matched_iocs == [ioc]
+
+
+@pytest.mark.asyncio
+async def test_external_enrichment_attached_and_scores_risk():
+    """VT/Shodan results are attached and boost the alert risk score."""
+    from tip.core.models import ExternalEnrichmentResult
+
+    manager = MagicMock()
+    manager.active = True
+    manager.enrich_iocs = AsyncMock(
+        return_value=[
+            ExternalEnrichmentResult(
+                source="virustotal",
+                ioc_value="1.2.3.4",
+                found=True,
+                malicious_score=90,
+                summary="45/70 engines flagged malicious",
+            )
+        ]
+    )
+    ioc = _ioc()
+    enricher, _, _, _ = _make_enricher(matched_iocs=[ioc], external_manager=manager)
+
+    result = await enricher.enrich_alert(_alert(), "elastic")
+
+    assert len(result.external_enrichment) == 1
+    assert result.external_enrichment[0].source == "virustotal"
+    assert result.risk_score >= 90  # external verdict raised the score
+    assert "tip:virustotal:malicious" in result.enrichment_tags
+
+
+@pytest.mark.asyncio
+async def test_external_malicious_triggers_notify_without_misp_match():
+    """Even with no MISP match, an external malicious verdict notifies."""
+    from tip.core.models import ExternalEnrichmentResult
+
+    manager = MagicMock()
+    manager.active = True
+    manager.enrich_iocs = AsyncMock(return_value=[])
+    manager.enrich_value = AsyncMock(
+        return_value=[
+            ExternalEnrichmentResult(
+                source="shodan",
+                ioc_value="1.2.3.4",
+                found=True,
+                malicious_score=85,
+                summary="malware tag",
+            )
+        ]
+    )
+    enricher, _, _, slack = _make_enricher(
+        matched_iocs=[], external_manager=manager, enrich_unmatched=True
+    )
+
+    result = await enricher.enrich_alert(_alert(severity="high"), "elastic")
+
+    slack.notify_enriched_alert.assert_called_once()
+    assert result.notification_sent is True

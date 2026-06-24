@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     elastic_kibana_url: str = "http://localhost:5601"
     elastic_alerts_index: str = ".alerts-security.alerts-default"
 
+    # External enrichment — VirusTotal (https://www.virustotal.com)
+    virustotal_api_key: str = ""
+    virustotal_base_url: str = "https://www.virustotal.com/api/v3"
+
+    # External enrichment — Shodan (https://www.shodan.io)
+    shodan_api_key: str = ""
+    shodan_base_url: str = "https://api.shodan.io"
+
+    # When True, also enrich extracted IOCs that did NOT match MISP.
+    # Off by default to conserve free-tier API quotas (VT = 4 req/min).
+    external_enrich_unmatched: bool = False
+
     # Slack
     slack_webhook_url: str = ""
     slack_channel: str = "#threat-intel"

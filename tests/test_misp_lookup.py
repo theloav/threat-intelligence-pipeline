@@ -6,7 +6,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from tip.core.config import Settings
 from tip.enrichment.misp_lookup import MISPLookup
+from tip.misp.client import MISPClient
+
+
+@pytest.mark.asyncio
+async def test_misp_client_degrades_without_api_key():
+    """No API key → lookup returns [], health_check False, no PyMISP NoKey crash."""
+    client = MISPClient(Settings(misp_api_key=""))
+    assert client.configured is False
+    assert await client.health_check() is False
+    assert await client.lookup("8.8.8.8") == []
+    ctx = await client.get_ioc_context("8.8.8.8")
+    assert ctx["matched"] is False
 
 
 def _make_lookup():

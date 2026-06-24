@@ -61,6 +61,23 @@ class IOC(BaseModel):
         return (utcnow() - self.first_seen).days
 
 
+class ExternalEnrichmentResult(BaseModel):
+    """Context from an external reputation/recon source (VirusTotal, Shodan)."""
+
+    source: str  # "virustotal" | "shodan"
+    ioc_value: str
+    found: bool = False
+    # Normalised maliciousness 0-100 (None if the source doesn't score)
+    malicious_score: int | None = None
+    summary: str = ""
+    # Source-specific structured facts (e.g. VT stats, Shodan ports/vulns)
+    details: dict[str, Any] = Field(default_factory=dict)
+    link: str | None = None  # human-viewable report URL
+
+    def is_malicious(self) -> bool:
+        return self.malicious_score is not None and self.malicious_score >= 50
+
+
 class EnrichedAlert(BaseModel):
     alert_id: str
     alert_name: str
@@ -79,6 +96,9 @@ class EnrichedAlert(BaseModel):
     # Advanced: risk scoring
     risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
     attack_techniques: list[str] = Field(default_factory=list)
+
+    # External enrichment (VirusTotal, Shodan, ...)
+    external_enrichment: list[ExternalEnrichmentResult] = Field(default_factory=list)
 
     def has_matches(self) -> bool:
         return len(self.matched_iocs) > 0

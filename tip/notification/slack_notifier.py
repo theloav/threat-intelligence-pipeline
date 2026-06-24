@@ -111,6 +111,30 @@ class SlackNotifier:
             }
         )
 
+        # External enrichment (VirusTotal / Shodan)
+        if alert.external_enrichment:
+            ext_lines = []
+            emoji = {"virustotal": "🧬", "shodan": "📡"}
+            for r in alert.external_enrichment[:5]:
+                if not r.found:
+                    continue
+                icon = "🔴" if r.is_malicious() else "🟢"
+                src_icon = emoji.get(r.source, "🔎")
+                score = f" ({r.malicious_score}/100)" if r.malicious_score is not None else ""
+                ext_lines.append(
+                    f"{icon} {src_icon} *{r.source}*{score} — `{r.ioc_value}` {r.summary}"
+                )
+            if ext_lines:
+                blocks.append(
+                    {
+                        "type": "section",
+                        "text": {
+                            "type": "mrkdwn",
+                            "text": "*🌐 External Intel*\n" + "\n".join(ext_lines),
+                        },
+                    }
+                )
+
         # Risk Score
         if alert.risk_score > 0:
             risk_bar = "█" * int(alert.risk_score / 10) + "░" * (10 - int(alert.risk_score / 10))

@@ -29,8 +29,14 @@ class MISPClient:
         self._misp = None
         self._event_cache: dict[str, str] = {}  # title → event_id
 
+    @property
+    def configured(self) -> bool:
+        return bool(self.settings.misp_api_key)
+
     def _get_misp(self):
         """Lazy-init PyMISP (import deferred so tests can mock easily)."""
+        if not self.configured:
+            raise RuntimeError("MISP API key not configured (TIP_MISP_API_KEY)")
         if self._misp is None:
             from pymisp import PyMISP
 
@@ -42,6 +48,8 @@ class MISPClient:
         return self._misp
 
     async def health_check(self) -> bool:
+        if not self.configured:
+            return False
         try:
             misp = self._get_misp()
             result = await asyncio.to_thread(misp.get_server_setting, "MISP.live")
@@ -108,9 +116,11 @@ class MISPClient:
         return stored
 
     async def lookup(self, value: str) -> list[dict]:
-        """Search MISP for an IOC value."""
-        misp = self._get_misp()
+        """Search MISP for an IOC value. Returns [] if MISP is not configured."""
+        if not self.configured:
+            return []
         try:
+            misp = self._get_misp()
             results = await asyncio.to_thread(misp.search, value=value, pythonify=False)
             if isinstance(results, list):
                 return results

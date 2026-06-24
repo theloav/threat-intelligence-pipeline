@@ -14,8 +14,8 @@
 1. **Ingest** — Pull fresh IOCs from AlienVault OTX (subscribed pulses) and three Abuse.ch APIs (MalwareBazaar, URLhaus, ThreatFox) on configurable schedules
 2. **Normalise** — Validate and clean IOCs: strip private IPs, deduplicate hashes, lowercase domains, remove junk
 3. **Store** — Deduplicate against SQLite/Redis cache; push net-new IOCs into self-hosted MISP with per-feed-per-day events and full tagging
-4. **Enrich** — Query MISP for IOC matches in Microsoft Sentinel and Elastic Security alerts; write enrichment tags back to the SIEM
-5. **Notify** — Send Slack Block Kit messages with full threat actor attribution, MITRE ATT&CK techniques, risk scores, and tags written back
+4. **Enrich** — Query MISP for IOC matches in Microsoft Sentinel and Elastic Security alerts; augment with **VirusTotal** detections and **Shodan** host recon; write enrichment tags back to the SIEM
+5. **Notify** — Send Slack Block Kit messages with full threat actor attribution, MITRE ATT&CK techniques, external intel (VT/Shodan), risk scores, and tags written back
 
 ---
 
@@ -92,6 +92,7 @@ tip run
 │                  ENRICHMENT LAYER                           │
 │  Extract IOC values from Elastic / Sentinel alerts          │
 │  Bulk lookup in MISP → matched attributes + context         │
+│  External intel: VirusTotal detections + Shodan recon       │
 │  Write enrichment tags back to SIEM                         │
 │  Multi-factor threat scoring (0–100)                        │
 └─────────────────────────┬───────────────────────────────────┘
@@ -192,6 +193,29 @@ TIP_SCORING_RECENCY_WEIGHT=0.3
 TIP_SCORING_CONFIDENCE_WEIGHT=0.4
 TIP_SCORING_SOURCE_WEIGHT=0.3
 ```
+
+### External enrichment — VirusTotal & Shodan
+
+Matched IOCs are augmented with third-party reputation and recon:
+
+| Source | IOC types | Adds |
+|--------|-----------|------|
+| **VirusTotal** (v3) | IP, domain, URL, MD5/SHA1/SHA256 | engine detection ratio, threat label, reputation, normalised 0–100 score |
+| **Shodan** | IP | open ports, running services, known CVEs, org/geo, risk tags |
+
+Both are **optional** (skipped if no key). A malicious VT/Shodan verdict can
+raise the alert risk score and trigger a Slack notification *even when the IOC
+isn't in MISP*. Results also become writeback tags: `tip:virustotal:malicious`,
+`tip:shodan:seen`.
+
+```bash
+TIP_VIRUSTOTAL_API_KEY=...   # free: https://www.virustotal.com/gui/my-apikey
+TIP_SHODAN_API_KEY=...       # https://account.shodan.io
+# Also enrich IOCs that didn't match MISP (uses more quota):
+TIP_EXTERNAL_ENRICH_UNMATCHED=false
+```
+
+`tip lookup <ioc>` shows MISP context **and** live VT/Shodan intel side by side.
 
 ### Optional Elasticsearch enrichment
 

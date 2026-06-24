@@ -27,6 +27,15 @@ def _get_settings():
     return get_settings()
 
 
+def _build_external_manager(settings):
+    """Build an ExternalEnrichmentManager with configured VT/Shodan enrichers."""
+    from tip.enrichment.external_enricher import ExternalEnrichmentManager
+    from tip.enrichment.shodan import ShodanEnricher
+    from tip.enrichment.virustotal import VirusTotalEnricher
+
+    return ExternalEnrichmentManager([VirusTotalEnricher(settings), ShodanEnricher(settings)])
+
+
 async def _is_reachable(url: str, timeout: float = 5.0) -> bool:
     """Return True if the host answers any HTTP status (i.e. TCP+HTTP up)."""
     import httpx
@@ -160,6 +169,8 @@ async def _run_pipeline(
             elastic_client=elastic if elastic.is_configured() else None,
             slack_notifier=slack,
             notify_on=settings.slack_notify_on,
+            external_manager=_build_external_manager(settings),
+            enrich_unmatched=settings.external_enrich_unmatched,
         )
         summary = await enricher.run_enrichment_cycle(alert_window)
 
@@ -303,6 +314,8 @@ async def _enrich(settings, siem: str, since_str: str | None, alert_window: int)
         elastic_client=elastic,
         slack_notifier=slack,
         notify_on=settings.slack_notify_on,
+        external_manager=_build_external_manager(settings),
+        enrich_unmatched=settings.external_enrich_unmatched,
     )
 
     summary = await enricher.run_enrichment_cycle(alert_window, since=since if since_str else None)
@@ -326,6 +339,7 @@ def cmd_lookup(value: str, json_output: bool):
 
 
 async def _lookup(settings, value: str, json_output: bool):
+    from tip.enrichment.alert_enricher import AlertEnricher
     from tip.enrichment.misp_lookup import MISPLookup
     from tip.misp.client import MISPClient
 
@@ -333,27 +347,60 @@ async def _lookup(settings, value: str, json_output: bool):
     lookup = MISPLookup(misp)
     result = await lookup.lookup_ioc(value)
 
+    # External enrichment (VirusTotal / Shodan) — runs regardless of MISP match
+    manager = _build_external_manager(settings)
+    ext_results = []
+    if manager.active:
+        ioc_type = AlertEnricher._infer_type(value)
+        if ioc_type is not None:
+            ext_results = await manager.enrich_value(value, ioc_type)
+        await manager.close()
+
     if json_output:
-        click.echo(json.dumps(result, default=str, indent=2))
+        click.echo(
+            json.dumps(
+                {"misp": result, "external": [r.model_dump() for r in ext_results]},
+                default=str,
+                indent=2,
+            )
+        )
         return
 
-    if not result["matched"]:
+    if result["matched"]:
+        ctx = result["context"]
+        console.print(Panel.fit(f"[green]✅ MISP Match: {value}[/green]", border_style="green"))
+        table = Table(box=box.SIMPLE)
+        table.add_column("Field", style="bold")
+        table.add_column("Value")
+        table.add_row("Attributes matched", str(len(ctx.get("attributes", []))))
+        table.add_row("Events", str(len(ctx.get("events", []))))
+        table.add_row("Threat Actors", ", ".join(ctx.get("threat_actors", [])) or "Unknown")
+        table.add_row("Campaigns", ", ".join(ctx.get("campaigns", [])) or "None")
+        table.add_row("Source Feeds", ", ".join(ctx.get("feeds", [])) or "Unknown")
+        table.add_row("Tags", "\n".join(ctx.get("tags", [])[:10]))
+        console.print(table)
+    else:
         console.print(f"[yellow]⚪ No match found in MISP for:[/yellow] {value}")
-        return
 
-    ctx = result["context"]
-    console.print(Panel.fit(f"[green]✅ MISP Match: {value}[/green]", border_style="green"))
-
-    table = Table(box=box.SIMPLE)
-    table.add_column("Field", style="bold")
-    table.add_column("Value")
-    table.add_row("Attributes matched", str(len(ctx.get("attributes", []))))
-    table.add_row("Events", str(len(ctx.get("events", []))))
-    table.add_row("Threat Actors", ", ".join(ctx.get("threat_actors", [])) or "Unknown")
-    table.add_row("Campaigns", ", ".join(ctx.get("campaigns", [])) or "None")
-    table.add_row("Source Feeds", ", ".join(ctx.get("feeds", [])) or "Unknown")
-    table.add_row("Tags", "\n".join(ctx.get("tags", [])[:10]))
-    console.print(table)
+    # Show external intel
+    if ext_results:
+        ext_table = Table(title="🌐 External Intel", box=box.SIMPLE)
+        ext_table.add_column("Source", style="bold cyan")
+        ext_table.add_column("Verdict")
+        ext_table.add_column("Summary")
+        ext_table.add_column("Link", style="dim")
+        for r in ext_results:
+            if not r.found:
+                verdict = "[dim]not found[/dim]"
+            elif r.is_malicious():
+                verdict = f"[red]malicious {r.malicious_score}/100[/red]"
+            else:
+                score = f" {r.malicious_score}/100" if r.malicious_score is not None else ""
+                verdict = f"[green]clean{score}[/green]"
+            ext_table.add_row(r.source, verdict, r.summary or "—", r.link or "")
+        console.print(ext_table)
+    elif manager.active:
+        console.print("[dim]No external intel returned (VT/Shodan).[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +512,29 @@ async def _status(settings, retry: int):
     else:
         abusech_note = "Auth-Key rejected or network error"
     checks.append(("Abuse.ch", abusech_ok, abusech_note))
+
+    # VirusTotal (optional external enrichment)
+    from tip.enrichment.shodan import ShodanEnricher
+    from tip.enrichment.virustotal import VirusTotalEnricher
+
+    vt = VirusTotalEnricher(settings)
+    if vt.configured:
+        vt_ok = await vt.health_check()
+        checks.append(
+            ("VirusTotal", vt_ok, "API key valid" if vt_ok else "Check TIP_VIRUSTOTAL_API_KEY")
+        )
+    else:
+        checks.append(("VirusTotal", None, "TIP_VIRUSTOTAL_API_KEY not set (optional)"))
+    await vt.close()
+
+    # Shodan (optional external enrichment)
+    shodan = ShodanEnricher(settings)
+    if shodan.configured:
+        sh_ok = await shodan.health_check()
+        checks.append(("Shodan", sh_ok, "API key valid" if sh_ok else "Check TIP_SHODAN_API_KEY"))
+    else:
+        checks.append(("Shodan", None, "TIP_SHODAN_API_KEY not set (optional)"))
+    await shodan.close()
 
     # Elastic
     elastic = ElasticClient(settings)
