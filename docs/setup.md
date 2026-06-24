@@ -109,7 +109,7 @@ Service         Status    Note
 ─────────────────────────────────────────────
 MISP            ✅ OK    http://localhost:8080
 AlienVault OTX  ✅ OK    API key configured
-Abuse.ch        ✅ OK    No API key needed
+Abuse.ch        ✅ OK    Auth-Key valid
 Elasticsearch   ⚪ N/A   Not configured (optional)
 Microsoft Sentinel ⚪ N/A  Not configured (optional)
 Slack           ✅ OK    Webhook working
@@ -126,7 +126,7 @@ tip feeds run
 # Or just OTX
 tip feeds run --feed otx
 
-# Or just Abuse.ch (no API key needed)
+# Or just Abuse.ch (needs the free TIP_ABUSECH_AUTH_KEY from auth.abuse.ch)
 tip feeds run --feed abusech
 ```
 

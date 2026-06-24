@@ -38,7 +38,13 @@ class AbuseCHFeed(BaseFeed):
         self.url_url = settings.abusech_url_url.rstrip("/") + "/"
         self.threatfox_url = settings.abusech_threatfox_url.rstrip("/") + "/"
         self.lookback_days = settings.abusech_lookback_days
-        self.client = httpx.AsyncClient(timeout=30, headers=FORM_HEADERS)
+        self.auth_key = settings.abusech_auth_key
+
+        # Abuse.ch requires a free Auth-Key header on all APIs since 2024.
+        headers = dict(FORM_HEADERS)
+        if self.auth_key:
+            headers["Auth-Key"] = self.auth_key
+        self.client = httpx.AsyncClient(timeout=30, headers=headers)
 
     async def fetch(self) -> list[IOC]:
         results_malware, results_urlhaus, results_threatfox = await asyncio.gather(
@@ -322,6 +328,13 @@ class AbuseCHFeed(BaseFeed):
                 self.malware_url,
                 data={"query": "get_info", "hash": "abc"},
             )
+            if resp.status_code == 401:
+                # Reachable, but Abuse.ch needs the free Auth-Key header.
+                logger.warning(
+                    "Abuse.ch reachable but returned 401 — set TIP_ABUSECH_AUTH_KEY "
+                    "(free at https://auth.abuse.ch)"
+                )
+                return False
             return resp.status_code == 200
         except Exception:
             return False

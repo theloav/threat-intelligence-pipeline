@@ -111,9 +111,11 @@ tip run
 | Feed | Source | IOC Types | Update Interval | API Key |
 |------|--------|-----------|-----------------|---------|
 | OTX Subscribed Pulses | AlienVault OTX | IP, Domain, URL, MD5, SHA256, SHA1, Email | 60 min | Required (free) |
-| MalwareBazaar | Abuse.ch | SHA256, MD5, Filename | 15 min | None |
-| URLhaus | Abuse.ch | URL, Domain/IP | 15 min | None |
-| ThreatFox | Abuse.ch | IP, Domain, URL, MD5, SHA256 | 15 min | None |
+| MalwareBazaar | Abuse.ch | SHA256, MD5, Filename | 15 min | Auth-Key (free) |
+| URLhaus | Abuse.ch | URL, Domain/IP | 15 min | Auth-Key (free) |
+| ThreatFox | Abuse.ch | IP, Domain, URL, MD5, SHA256 | 15 min | Auth-Key (free) |
+
+> **Note:** Since 2024 Abuse.ch requires a free [Auth-Key](https://auth.abuse.ch) for all three APIs. Set it as `TIP_ABUSECH_AUTH_KEY` in `.env`.
 
 ---
 

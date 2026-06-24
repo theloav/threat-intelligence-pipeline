@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     otx_lookback_days: int = 7
 
     # Abuse.ch
+    # NOTE: Since 2024 Abuse.ch requires a free Auth-Key for all three APIs.
+    # Get one at https://auth.abuse.ch (free, instant). Leave blank only if
+    # your account/IP is allow-listed.
+    abusech_auth_key: str = ""
     abusech_malware_url: str = "https://mb-api.abuse.ch/api/v1/"
     abusech_url_url: str = "https://urlhaus-api.abuse.ch/v1/"
     abusech_threatfox_url: str = "https://threatfox-api.abuse.ch/api/v1/"

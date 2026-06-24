@@ -27,6 +27,18 @@ def _get_settings():
     return get_settings()
 
 
+async def _is_reachable(url: str, timeout: float = 5.0) -> bool:
+    """Return True if the host answers any HTTP status (i.e. TCP+HTTP up)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+            resp = await client.get(url)
+            return resp.status_code < 600
+    except Exception:
+        return False
+
+
 def _build_clients(settings):
     """Build all service clients from settings."""
     from tip.enrichment.alert_enricher import AlertEnricher
@@ -421,13 +433,17 @@ async def _status(settings, retry: int):
         if attempt < retry - 1:
             console.print(f"[yellow]MISP not ready, retrying... ({attempt + 2}/{retry})[/yellow]")
             await asyncio.sleep(5)
-    checks.append(
-        (
-            "MISP",
-            misp_ok,
-            settings.misp_url if misp_ok else "Check TIP_MISP_URL and TIP_MISP_API_KEY",
-        )
-    )
+    if misp_ok:
+        misp_note = settings.misp_url
+    else:
+        # Distinguish "MISP up but no/invalid API key" from "MISP unreachable".
+        if await _is_reachable(settings.misp_url):
+            misp_note = (
+                f"Reachable at {settings.misp_url} — set TIP_MISP_API_KEY (Admin → Auth Keys)"
+            )
+        else:
+            misp_note = "Unreachable — is the container up? Check TIP_MISP_URL"
+    checks.append(("MISP", misp_ok, misp_note))
 
     # OTX
     if settings.otx_api_key:
@@ -439,10 +455,16 @@ async def _status(settings, retry: int):
     else:
         checks.append(("AlienVault OTX", None, "TIP_OTX_API_KEY not set"))
 
-    # Abuse.ch
+    # Abuse.ch (requires a free Auth-Key header since 2024)
     abusech = AbuseCHFeed(settings)
     abusech_ok = await abusech.health_check()
-    checks.append(("Abuse.ch", abusech_ok, "No API key needed" if abusech_ok else "Network error"))
+    if abusech_ok:
+        abusech_note = "Auth-Key valid"
+    elif not settings.abusech_auth_key:
+        abusech_note = "Set TIP_ABUSECH_AUTH_KEY (free at https://auth.abuse.ch)"
+    else:
+        abusech_note = "Auth-Key rejected or network error"
+    checks.append(("Abuse.ch", abusech_ok, abusech_note))
 
     # Elastic
     elastic = ElasticClient(settings)

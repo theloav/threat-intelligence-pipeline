@@ -11,8 +11,8 @@ from tip.core.models import IOCType, ThreatLevel
 from tip.feeds.abusech_feed import AbuseCHFeed
 
 
-def _settings() -> Settings:
-    return Settings(misp_api_key="x", otx_api_key="x")
+def _settings(auth_key: str = "") -> Settings:
+    return Settings(misp_api_key="x", otx_api_key="x", abusech_auth_key=auth_key)
 
 
 def _malware_response():
@@ -220,4 +220,28 @@ async def test_partial_source_failure_still_returns_others():
     sources = {i.source_feed for i in iocs}
     assert "abusech_malware" in sources
     assert "threatfox" in sources
+    await feed.close()
+
+
+def test_auth_key_sent_as_header_when_configured():
+    """Abuse.ch Auth-Key (required since 2024) is attached to requests."""
+    feed = AbuseCHFeed(_settings(auth_key="secret-key-123"))
+    assert feed.client.headers.get("Auth-Key") == "secret-key-123"
+
+
+def test_no_auth_header_when_key_absent():
+    feed = AbuseCHFeed(_settings(auth_key=""))
+    assert "Auth-Key" not in feed.client.headers
+
+
+@pytest.mark.asyncio
+async def test_health_check_401_returns_false():
+    """A 401 (missing Auth-Key) is reachable-but-unauthorised → False."""
+    feed = AbuseCHFeed(_settings())
+    with respx.mock:
+        respx.post("https://mb-api.abuse.ch/api/v1/").mock(
+            return_value=httpx.Response(401, json={"error": "Unauthorized"})
+        )
+        result = await feed.health_check()
+    assert result is False
     await feed.close()
